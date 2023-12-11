@@ -2,7 +2,7 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
-  name: flux-system
+  name: stack
   namespace: flux-system
 spec:
   interval: 1m0s
@@ -18,11 +18,9 @@ metadata:
   name: infra
   namespace: flux-system
 spec:
-  interval: 10m0s
-  path: ./infrastructure
+  interval: 3m0s
+  path: ./infractructure
   prune: true
   sourceRef:
     kind: GitRepository
-    name: flux-system
-
-
+    name: stack
