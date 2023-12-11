@@ -1,0 +1,47 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: grafana-charts
+  namespace: flux-system
+spec:
+  interval: 20m0s
+  url: https://grafana.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: loki-stack
+  namespace: flux-system
+spec:
+  releaseName: loki
+  targetNamespace: default
+  upgrade:
+    preserveValues: false
+  interval: 5m
+  chart:
+    spec:
+      chart: loki-stack
+      version: '2.9.9'
+      sourceRef:
+        kind: HelmRepository
+        name: grafana-charts
+        namespace: flux-system
+      interval: 60m
+  values:
+    promtail:
+      labels:
+        app: promtail
+        release: loki-stack
+      ingress:
+        enabled: true
+        annotations:
+          kubernetes.io/backend.protocol: HTTPS
+          kubernetes.io/ingress.class: nginx
+        hosts:
+          - host: grafana.mari1327.pp.ua
+            paths:
+              - /
+    grafana:
+      enabled: false
+    prometheus:
+      enabled: false
