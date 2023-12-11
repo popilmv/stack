@@ -1,58 +1,103 @@
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta1
 kind: HelmRepository
 metadata:
-  name: prometheus
-  namespace: default
+  name: prometheus-community
+  namespace: flux-system
 spec:
-  interval: 10m
+  interval: 27h
   url: https://prometheus-community.github.io/helm-charts
+  timeout: 2m
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2beta1
 kind: HelmRelease
 metadata:
-  name: prometheus
-  namespace: default
+  name: kube-prometheus-stack
+  namespace: flux-system
+  labels:
+    app: prometheus
 spec:
-  releaseName: prometheus
+  targetNamespace: monitoring
+  install:
+    createNamespace: true
+  upgrade:
+    preserveValues: false
+  interval: 1m0s
   chart:
     spec:
       chart: kube-prometheus-stack
-      version: 55.1.0
+      version: 54.0.0
+      reconcileStrategy: ChartVersion
       sourceRef:
         kind: HelmRepository
-        name: prometheus
-        namespace: default
-  interval: 10m
-  timeout: 5m
+        name: prometheus-community
+        namespace: flux-system
   values:
+    defaultRules:
+      create: true
+      rules:
+        alertmanager: false
+        etcd: false
+        configReloaders: false
+        general: false
+        k8s: false
+        kubeApiserverAvailability: false
+        kubeApiserverBurnrate: false
+        kubeApiserverHistogram: false
+        kubeApiserverSlos: false
+        kubeControllerManager: false
+        kubelet: false
+        kubeProxy: false
+        kubePrometheusGeneral: false
+        kubePrometheusNodeRecording: false
+        kubernetesApps: false
+        kubernetesResources: false
+        kubernetesStorage: false
+        kubernetesSystem: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        kubeStateMetrics: false
+        network: false
+        node: false
+        nodeExporterAlerting: true
+        nodeExporterRecording: false
+        prometheus: false
+        prometheusOperator: false
     grafana:
+      sidecar:
+        alerts:
+          enabled: true
+          label: grafana_alert
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          folder: /tmp/dashboards
+          folderAnnotation: grafana_folder
+          provider:
+            allowUiUpdates: true
+            foldersFromFilesStructure: true
+            updateIntervalSeconds: 30
+        datasources:
+          enabled: true
+          label: grafana_datasource
+        plugins:
+          enabled: true
+          label: grafana_plugin
+        notifiers:
+          enabled: false
+          label: grafana_notifier
+      additionalDataSources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.logging:3100
+        jsonData:
+          manageAlerts: false
+          maxLines: 1000
+        isDefault: false
+        editable: true
       ingress:
-        enabled: true
         ingressClassName: nginx
         enabled: true
         hosts:
           - grafana.mari1327.pp.ua
-    sidecar:
-      dashboards:
-        enabled: true
-        label: grafana_dashboard
-        folder: /tmp/dashboards
-        folderAnnotation: grafana_folder
-        provider:
-          allowUiUpdates: true
-          foldersFromFilesStructure: true
-          updateIntervalSeconds: 30
-      datasources:
-        enabled: true
-        label: grafana_datasource
-    additionalDataSources:
-    - name: Loki
-      type: loki
-      access: proxy
-      url: http://my-loki-stack:3100
-
-
-
-
-
-
