@@ -1,0 +1,227 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta1
+kind: HelmRepository
+metadata:
+  name: prometheus-community
+  namespace: flux-system
+spec:
+  interval: 27h
+  url: https://prometheus-community.github.io/helm-charts
+  timeout: 2m
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: flux-system
+  labels:
+    app: prometheus
+spec:
+  targetNamespace: monitoring
+  install:
+    createNamespace: false
+  upgrade:
+    preserveValues: false
+  dependsOn:
+    - name: aws-ebs-csi-driver
+  interval: 1m0s
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: 54.0.0
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  valuesFrom:
+    - kind: ConfigMap
+      name: additional-prometheus-rules
+      valuesKey: additional-rules.yaml
+  values:
+    defaultRules:
+      create: true
+      rules:
+        alertmanager: false
+        etcd: false
+        configReloaders: false
+        general: false
+        k8s: false
+        kubeApiserverAvailability: false
+        kubeApiserverBurnrate: false
+        kubeApiserverHistogram: false
+        kubeApiserverSlos: false
+        kubeControllerManager: false
+        kubelet: false
+        kubeProxy: false
+        kubePrometheusGeneral: false
+        kubePrometheusNodeRecording: false
+        kubernetesApps: false
+        kubernetesResources: false
+        kubernetesStorage: false
+        kubernetesSystem: false
+        kubeSchedulerAlerting: false
+        kubeSchedulerRecording: false
+        kubeStateMetrics: false
+        network: false
+        node: false
+        nodeExporterAlerting: true
+        nodeExporterRecording: false
+        prometheus: false
+        prometheusOperator: false
+    grafana:
+      sidecar:
+        alerts:
+          enabled: true
+          label: grafana_alert
+        dashboards:
+          enabled: true
+          label: grafana_dashboard
+          # To change default folder for kube-prometheus stack uncomment annotations
+          # annotations:
+          #   grafana_folder: "KUBE-STATE-METRICS"
+          folder: /tmp/dashboards
+          folderAnnotation: grafana_folder
+          provider:
+            allowUiUpdates: true
+            foldersFromFilesStructure: true
+            updateIntervalSeconds: 30
+        datasources:
+          enabled: true
+          label: grafana_datasource
+        plugins:
+          enabled: true
+          label: grafana_plugin
+        notifiers:
+          enabled: false
+          label: grafana_notifier
+      envFromSecrets: 
+      - name: grafanacloudwatch
+        optional: true
+      admin:
+        ## Name of the secret. Can be templated.
+        existingSecret: "grafana-password"
+        userKey: username
+        passwordKey: password
+      additionalDataSources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.logging:3100
+        jsonData:
+          manageAlerts: false
+          maxLines: 1000
+        isDefault: false
+        editable: true
+      - name: X-Ray
+        type: grafana-x-ray-datasource
+        jsonData:
+          authType: keys
+          defaultRegion: us-east-1
+        secureJsonData:
+          accessKey: $accessKey
+          secretKey: $secretKey
+      - name: CloudWatch
+        type: cloudwatch
+        editable: true
+        jsonData:
+          authType: keys
+          defaultRegion: us-east-1
+        secureJsonData:
+          accessKey: $accessKey
+          secretKey: $secretKey
+          datasource: grafana-x-ray-datasource
+      # deleteDatasources:
+      # - name: nameofdatasource
+      plugins:
+        -  grafana-x-ray-datasource
+      ingress:
+        ingressClassName: nginx
+        enabled: true
+        annotations:
+          cert-manager.io/cluster-issuer: "letsencrypt"
+        hosts:
+          - monitoring-odb-dev.itoutposts.ltd
+        tls:
+          - secretName: monitoring-dev-tls-cert
+            hosts:
+              - monitoring-odb-dev.itoutposts.ltd
+    alertmanager:
+      enabled: true
+      config:
+        global:
+          resolve_timeout: 5m
+          slack_api_url: "https://hooks.slack.com/services/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"
+        inhibit_rules:
+          - source_matchers:
+              - 'severity = critical'
+            target_matchers:
+              - 'severity =~ warning|info'
+            equal:
+              - 'namespace'
+              - 'alertname'
+          - source_matchers:
+              - 'severity = warning'
+            target_matchers:
+              - 'severity = info'
+            equal:
+              - 'namespace'
+              - 'alertname'
+          - source_matchers:
+              - 'alertname = InfoInhibitor'
+            target_matchers:
+              - 'severity = info'
+            equal:
+              - 'namespace'
+        route:
+          group_by: [ 'severity', 'namespace' ]
+          group_wait: 1m
+          group_interval: 5m
+          repeat_interval: 3h
+          receiver: 'null'
+          routes:
+          - receiver: 'null'
+            matchers:
+              - alertname =~ "InfoInhibitor|Watchdog"
+          - receiver: 'slack'
+            matchers:
+            - severity =~ "critical|warning"
+            # - alertname !~ "KubeProxyDown|KubeSchedulerDown|KubeControllerManagerDown|TargetDown"
+            continue: true
+          # - receiver: 'telegram'
+          #   matchers: 
+          #   - severity =~ "warning|critical"
+          #   - alertname = ^(CPUThrottlingHigh|PodRestartingOften|ContainerOOMKilled|TridentPodNotRunning|ContainerHighMemoryUsage|NodeHighCpuLoad|NodeOutOfMemory|ContainerStorageWarning|ContainerStorageCritical|ClusterPodCapacityWarning|High5xxHttpResponses|Watchdog|NodeFilesystemSpaceFillingUp|KubePodCrashLooping)$
+        receivers:
+        - name: 'null'
+        # - name: 'telegram'
+        #   telegram_configs:
+        #   - send_resolved: 'true'
+        #     bot_token: '6054353115:AAEJcWIJ2EeCUzQBC-oEfNqX6sXsYzTjmrU'
+        #     chat_id: '-1001919011602'
+        #     api_url: 'https://api.telegram.org'
+        #     parse_mode: 'Markdown'
+        # - name: 'telegram'
+        #   webhook_configs:
+        #     - url: 'http://alertmanager-bot-svc.monitoring.svc.cluster.local:9087/alert/-1001919011602'
+        # - name: 'telegram'
+        #   webhook_configs:
+        #     - send_resolved: True
+        #       bot_token: 6054353115:AAEJcWIJ2EeCUzQBC-oEfNqX6sXsYzTjmrU
+        #       chat_id: -1001919011602
+        - name: 'slack'
+          slack_configs:
+            - channel: 'itoutposts-odb-devops'
+              send_resolved: true
+              title: '[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] Monitoring Event Notification'
+              text: >-
+                {{ range .Alerts }}
+                  *Alert:* {{ .Annotations.summary }} - `{{ .Labels.severity }}`
+                  *Description:* {{ .Annotations.description }}
+                  *Graph:* <{{ .GeneratorURL }}|:chart_with_upwards_trend:> *Runbook:* <{{ .Annotations.runbook }}|:spiral_note_pad:>
+                  *Details:*
+                  {{ range .Labels.SortedPairs }} • *{{ .Name }}:* `{{ .Value }}`
+                  {{ end }}
+                {{ end }}
+        templates:
+        - '/etc/alertmanager/config/*.tmpl'

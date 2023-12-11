@@ -1,0 +1,103 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: grafana-alerts-container
+  namespace: monitoring
+  labels:
+    grafana_alert: "1"
+data:
+  grafana-alerts-container.yaml: |-
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: 1m
+        folder: Container
+        interval: 1m
+        rules:
+          - uid: d88334ad-df71-4576c-b293-b4a98423ac3
+            title: PodOftenRestarting
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: prometheus
+                model:
+                  disableTextWrap: false
+                  editorMode: code
+                  expr: ceil(delta(kube_pod_container_status_restarts_total[10m]))
+                  fullMetaSearch: false
+                  includeNullMetadata: true
+                  instant: true
+                  intervalMs: 1000
+                  legendFormat: __auto
+                  maxDataPoints: 43200
+                  range: false
+                  refId: A
+                  useBackend: false
+              - refId: B
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  conditions:
+                      - evaluator:
+                          params: []
+                          type: gt
+                        operator:
+                          type: and
+                        query:
+                          params:
+                              - B
+                        reducer:
+                          params: []
+                          type: last
+                        type: query
+                  datasource:
+                      type: __expr__
+                      uid: __expr__
+                  expression: A
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  reducer: last
+                  refId: B
+                  type: reduce
+              - refId: C
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  conditions:
+                      - evaluator:
+                          params:
+                              - 5
+                          type: gt
+                        operator:
+                          type: and
+                        query:
+                          params:
+                              - C
+                        reducer:
+                          params: []
+                          type: last
+                        type: query
+                  datasource:
+                      type: __expr__
+                      uid: __expr__
+                  expression: B
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: C
+                  type: threshold
+            noDataState: Alerting
+            execErrState: Error
+            for: 0s
+            annotations:
+              description: 'Namespace: {{ $labels.namespace }} Pod: {{ $labels.pod }} Container: {{ $labels.container }} restarted more than 5 times in for the last 10m'
+              summary: More than 5 restarts in pod {{ $labels.pod }} for the last 10m
+            labels:
+              severity: critical
+            isPaused: false

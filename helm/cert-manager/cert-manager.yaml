@@ -1,0 +1,35 @@
+apiVersion: source.toolkit.fluxcd.io/v1beta1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+spec:
+  interval: 27h
+  url: https://charts.jetstack.io
+  timeout: 2m
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: cert-manager
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: aws-ebs-csi-driver
+  targetNamespace: cert-manager
+  install:
+      createNamespace: true
+  upgrade:
+    preserveValues: false
+  interval: 5m
+  chart:
+    spec:
+      chart: cert-manager
+      version: 'v1.11.0'
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: flux-system
+      interval: 1m
+  values:
+    installCRDs: true

@@ -1,0 +1,241 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: grafana-alerting-config
+  namespace: monitoring
+  labels:
+    grafana_alert: "1"
+data:
+  grafana-alerting-config.yaml: |-
+    apiVersion: v1
+    contactPoints:
+        - orgId: 1
+          name: telegram
+          receivers:
+            - uid: first_uid
+              type: telegram
+              settings:
+                bottoken: 6054353115:AAEJcWIJ2EeCUzQBC-oEfNqX6sXsYzTjmrU
+                chatid: "-1002093755934"
+                disable_notification: false
+                message: |
+                  {{ template "telegram_message" . }}
+                parse_mode: HTML
+              disableResolveMessage: false
+        - orgId: 1
+          name: slack
+          receivers:
+            - uid: second_uid
+              type: slack
+              settings:
+                text: |
+                  {{ template "slack_message" . }}
+                title: |
+                  {{ template "slack_title" . }}
+                recipient: itoutposts-odb-devops
+                url: https://hooks.slack.com/services/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
+              disableResolveMessage: false
+    deleteTemplates:
+      - orgID: 1
+        name: configmap-templates
+    templates:
+      - orgID: 1
+        name: global-templates
+        template: |-
+          {{ define "slack_title" }}
+            {{ if gt (len .Alerts.Firing) 0 }}
+            🔥 {{ len .Alerts.Firing }} alert(s) firing
+            {{ end }}
+            {{ if gt (len .Alerts.Resolved) 0 }}
+            ✅ {{ len .Alerts.Resolved }} alert(s) resolved
+            {{ end }}
+          {{ end }}
+
+          {{ define "slack_message" }}
+            {{ if gt (len .Alerts.Firing) 0 }}
+              {{ range .Alerts.Firing }} {{ template "slack_alert_firing" .}} {{ end }} {{ end }}
+            {{ if gt (len .Alerts.Resolved) 0 }}
+              {{ range .Alerts.Resolved }} {{ template "slack_alert_resolved" .}} {{ end }} {{ end }}
+          {{ end }}
+
+          {{ define "slack_alert_firing" }}
+            *Alertname:* * {{ .Labels.alertname }}*
+            *Severity:* *{{ .Labels.severity }}*
+            *Summary:* {{ .Annotations.summary }}
+            *Description:* {{ .Annotations.description }}
+            *Details:*
+            {{ range .Labels.SortedPairs }} • * {{ .Name }}:* `{{ .Value }}`
+            {{ end }}
+            {{ .Annotations.AlertValues }}
+            <https://monitoring-odb-dev.itoutposts.ltd/d/{dashboard_id/name}|Access dashboard> - <https://monitoring-odb-dev.itoutposts.ltd/alerting/silence/new?matcher=node%3D{{ .Annotations.Node }}|Silence all alerts for this node> - <https://monitoring-odb-dev.itoutposts.ltd/alerting/silence/new?matcher=alertname%3D{{ .Labels.alertname }}|Silence this alert for all nodes>{{ end }}
+
+          {{ define "slack_alert_resolved" }}
+            *Alertname:* * {{ .Labels.alertname }}*
+            *Reason:* {{ .Annotations.grafana_state_reason }}
+            *Details:*
+            {{ range .Labels.SortedPairs }} • * {{ .Name }}:* `{{ .Value }}`
+            {{ end }}
+            {{ .Annotations.AlertValues }}
+            <https://monitoring-odb-dev.itoutposts.ltd/d/{dashboard_id/name}|Access dashboard>
+          {{ end }}
+
+          {{ define "telegram_message" }}
+            {{ if gt (len .Alerts.Firing) 0 }}
+            <b>🔥 {{ len .Alerts.Firing }} alert(s) firing:</b>
+              {{ range .Alerts.Firing }} {{ template "telegram_alert_firing" .}} {{ end }} {{ end }}
+            {{ if gt (len .Alerts.Resolved) 0 }}
+            <b>✅ {{ len .Alerts.Resolved }} alert(s) resolved:</b>
+              {{ range .Alerts.Resolved }} {{ template "telegram_alert_resolved" .}} {{ end }} {{ end }}
+          {{ end }}
+
+          {{ define "telegram_alert_firing" }}
+            Alertname: <b>{{ .Labels.alertname }}</b>
+            Severity: <b>{{ .Labels.severity }}</b>
+            Summary: {{ .Annotations.summary }}
+            Description: {{ .Annotations.description }}
+            <b>Details:<b>
+            {{ range .Labels.SortedPairs }} • </b> {{ .Name }}:</b> {{ .Value }}
+            {{ end }}
+            {{ .Annotations.AlertValues }}
+            <a href="https://monitoring-odb-dev.itoutposts.ltd/alerting/silence/new?matcher=node%3D{{ .Annotations.Node }}">Silence all alerts for this node</a> - <a href="https://monitoring-odb-dev.itoutposts.ltd/alerting/silence/new?matcher=alertname%3D{{ .Labels.alertname }}">Silence this alert for all nodes</a>
+            <a href="https://monitoring-odb-dev.itoutposts.ltd/d/{dashboard_id/name}">Access dashboard</a>{{ end }}
+
+            {{ define "telegram_alert_resolved" }}
+              Alertname: <b>{{ .Labels.alertname }}</b>
+              <b>Reason:<b> {{ .Annotations.grafana_state_reason }}
+              <b>Details:<b>
+              {{ range .Labels.SortedPairs }} • </b> {{ .Name }}:</b> {{ .Value }}
+              {{ end }}
+              {{ .Annotations.AlertValues }}
+              <a href="https://monitoring-odb-dev.itoutposts.ltd/d/{dashboard_id/name}">Access dashboard</a>{{ end }}
+
+    policies:
+      - orgId: 1
+        receiver: slack
+        group_by:
+        - grafana_folder
+        - alertname
+        # mute_time_intervals:
+        # - abc
+        # # <duration> How long to initially wait to send a notification for a group
+        # #            of alerts. Allows to collect more initial alerts for the same group.
+        # #            (Usually ~0s to few minutes), default = 30s
+        group_wait: 30s
+        # # <duration> How long to wait before sending a notification about new alerts that
+        # #            are added to a group of alerts for which an initial notification has
+        # #            already been sent. (Usually ~5m or more), default = 5m
+        group_interval: 5m
+        # # <duration>  How long to wait before sending a notification again if it has already
+        # #             been sent successfully for an alert. (Usually ~3h or more), default = 4h
+        repeat_interval: 4h
+        routes:
+        - receiver: slack
+          object_matchers:
+            - - alertname
+              - '!='
+              - CPU-Utilization-RDS
+            - - alertname
+              - '!='
+              - PodRestartingOften                   
+        - receiver: telegram
+          object_matchers:
+            - - alertname
+              - =
+              - CPU-Utilization-RDS
+            - - alertname
+              - =
+              - PodRestartingOften
+
+    groups:
+      - orgId: 1
+        name: 1m
+        folder: Container
+        interval: 1m
+        rules:
+          - uid: d88334ad-df71-4576c-b293-b4a98423ac3
+            title: PodOftenRestarting
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: prometheus
+                model:
+                  disableTextWrap: false
+                  editorMode: code
+                  expr: ceil(delta(kube_pod_container_status_restarts_total[10m])) > 5
+                  fullMetaSearch: false
+                  includeNullMetadata: true
+                  instant: true
+                  intervalMs: 1000
+                  legendFormat: __auto
+                  maxDataPoints: 43200
+                  range: false
+                  refId: A
+                  useBackend: false
+              - refId: B
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  conditions:
+                      - evaluator:
+                          params: []
+                          type: gt
+                        operator:
+                          type: and
+                        query:
+                          params:
+                              - B
+                        reducer:
+                          params: []
+                          type: last
+                        type: query
+                  datasource:
+                      type: __expr__
+                      uid: __expr__
+                  expression: A
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  reducer: last
+                  refId: B
+                  type: reduce
+              - refId: C
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  conditions:
+                      - evaluator:
+                          params:
+                              - 0
+                          type: gt
+                        operator:
+                          type: and
+                        query:
+                          params:
+                              - C
+                        reducer:
+                          params: []
+                          type: last
+                        type: query
+                  datasource:
+                      type: __expr__
+                      uid: __expr__
+                  expression: B
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: C
+                  type: threshold
+            noDataState: OK
+            execErrState: Error
+            for: 0s
+            annotations:
+              description: 'Namespace: {{ $labels.namespace }} Pod: {{ $labels.pod }} Container: {{ $labels.container }} restarted {{ humanize $values.A.Value }} times in for the last 10m'
+              summary: More than 5 restarts in pod {{ $labels.pod }} for the last 10m
+            labels:
+              severity: critical
+            isPaused: false
