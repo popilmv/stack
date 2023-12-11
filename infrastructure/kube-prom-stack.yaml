@@ -24,3 +24,35 @@ spec:
         namespace: default
   interval: 10m
   timeout: 5m
+  values:
+    grafana:
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        enabled: true
+        hosts:
+          - grafana.mari1327.pp.ua
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        folder: /tmp/dashboards
+        folderAnnotation: grafana_folder
+        provider:
+          allowUiUpdates: true
+          foldersFromFilesStructure: true
+          updateIntervalSeconds: 30
+      datasources:
+        enabled: true
+        label: grafana_datasource
+    additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki:3100
+
+
+
+
+
+
